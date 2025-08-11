@@ -1,26 +1,30 @@
-
 import os
 import cv2
 import numpy as np
 import csv
 import smtplib
-import ssl
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 import onnxruntime as ort
 from gtts import gTTS
 from email.message import EmailMessage
-import time
-import platform
 import urllib.request
 import streamlit as st
 from PIL import Image
 import tempfile
-import threading
-import pygame
+from dotenv import load_dotenv
 
-# 1. PATH CONFIGURATION
-BASE_DIR = r"E:\sameer makhani\attendance"
+# ==============================
+# 1. LOAD ENVIRONMENT VARIABLES
+# ==============================
+load_dotenv()
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASS = os.getenv("EMAIL_PASS")
+
+# ==============================
+# 2. PATH CONFIGURATION
+# ==============================
+BASE_DIR = r"E:\sameer makhani\attendance"   # change if hosting
 CONTENT_DIR = os.path.join(BASE_DIR, 'content')
 KNOWN_FACES_DIR = os.path.join(CONTENT_DIR, 'known_faces')
 ATTENDANCE_PATH = os.path.join(CONTENT_DIR, 'attendance.csv')
@@ -28,7 +32,9 @@ ARCFACE_PATH = os.path.join(CONTENT_DIR, 'arcface.onnx')
 PROTO_PATH = os.path.join(BASE_DIR, 'deploy.prototxt')
 CAFFEMDL_PATH = os.path.join(BASE_DIR, 'res10_300x300_ssd_iter_140000.caffemodel')
 
-# 2. VERIFY FILES EXIST
+# ==============================
+# 3. VERIFY FILES EXIST
+# ==============================
 @st.cache_resource
 def verify_and_download_models():
     if not os.path.exists(ARCFACE_PATH):
@@ -48,8 +54,9 @@ def verify_and_download_models():
             CAFFEMDL_PATH
         )
 
-# 3. AUDIO FEEDBACK
-pygame.mixer.init()
+# ==============================
+# 4. AUDIO FEEDBACK
+# ==============================
 def speak(text):
     try:
         tts = gTTS(text=text, lang='en')
@@ -57,44 +64,44 @@ def speak(text):
             temp_path = fp.name
             tts.save(temp_path)
 
-        # Load and play in Streamlit
-        audio_file = open(temp_path, "rb")
-        audio_bytes = audio_file.read()
-        st.audio(audio_bytes, format='audio/mp3')
+        with open(temp_path, "rb") as audio_file:
+            audio_bytes = audio_file.read()
+            st.audio(audio_bytes, format='audio/mp3')
 
-        # Optionally delete the temp file
-        audio_file.close()
         os.remove(temp_path)
-
     except Exception as e:
         st.error(f"Audio Error: {e}")
 
-
-
-# 4. EMAIL FUNCTION
+# ==============================
+# 5. EMAIL FUNCTION
+# ==============================
 def send_email(name, timestamp):
     try:
         msg = EmailMessage()
         msg['Subject'] = f'Attendance Marked: {name}'
-        msg['From'] = 'system@institute.com'
+        msg['From'] = EMAIL_USER
         msg['To'] = 'businessoftshirts@gmail.com'
         msg.set_content(f'Student: {name}\nTime: {timestamp}')
 
         with smtplib.SMTP('smtp.gmail.com', 587) as server:
             server.starttls()
-            server.login('sam.makhani33@gmail.com', 'hpfi jhnc eixw udzs')
+            server.login(EMAIL_USER, EMAIL_PASS)
             server.send_message(msg)
     except Exception as e:
         st.error(f"Email Error: {e}")
 
-# 5. LOAD MODELS
+# ==============================
+# 6. LOAD MODELS
+# ==============================
 @st.cache_resource
 def load_models():
     session = ort.InferenceSession(ARCFACE_PATH)
     face_net = cv2.dnn.readNetFromCaffe(PROTO_PATH, CAFFEMDL_PATH)
     return session, face_net
 
-# 6. GET EMBEDDING
+# ==============================
+# 7. GET EMBEDDING
+# ==============================
 @st.cache_data(show_spinner=False)
 def get_embedding(image, _session, _face_net):
     blob = cv2.dnn.blobFromImage(cv2.resize(image, (300,300)), 1.0, (300,300), (104,117,123))
@@ -114,11 +121,12 @@ def get_embedding(image, _session, _face_net):
     inp = np.transpose(norm, (2,0,1))[np.newaxis,:]
     return _session.run(None, {_session.get_inputs()[0].name: inp})[0].flatten()
 
-# 7. LOAD KNOWN FACES
+# ==============================
+# 8. LOAD KNOWN FACES
+# ==============================
 @st.cache_data(show_spinner=True)
 def load_known_faces(_session, _face_net):
     known = {}
-    names, embeddings = [], []
     for file in os.listdir(KNOWN_FACES_DIR):
         if file.lower().endswith(('.jpg', '.jpeg', '.png')):
             path = os.path.join(KNOWN_FACES_DIR, file)
@@ -129,7 +137,9 @@ def load_known_faces(_session, _face_net):
                 known[name] = emb
     return known
 
-# 8. STREAMLIT UI
+# ==============================
+# 9. STREAMLIT UI
+# ==============================
 st.title("📸 Face Recognition Attendance")
 verify_and_download_models()
 session, face_net = load_models()
@@ -164,8 +174,9 @@ if camera_input:
                 match_found = True
                 break
         if not match_found:
-            speak("No face found try again")
+            speak("No match found, try again")
             st.warning("❌ No match found. Try again.")
     else:
         speak("No face detected")
         st.warning("😕 No face detected. Please retake the picture.")
+
